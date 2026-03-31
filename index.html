@@ -3,139 +3,251 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Inventario PRO Móvil</title>
+<title>Inventario PRO 🔥</title>
+
 <style>
 body{font-family:Arial;margin:0;background:#f4f4f4}
 header{background:#111;color:#fff;text-align:center;padding:15px}
 .container{padding:15px}
-input,button,select{width:100%;padding:12px;margin:6px 0;border-radius:10px;border:1px solid #ccc;font-size:16px}
+input,button,select{
+width:100%;padding:12px;margin:6px 0;border-radius:10px;
+border:1px solid #ccc;font-size:16px
+}
 button{background:#28a745;color:white;border:none}
+.delete{background:#dc3545}
 .card{background:white;padding:12px;margin:10px 0;border-radius:12px}
 .low{color:red;font-weight:bold}
 video{width:100%;border-radius:10px}
 </style>
+
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+<script src="https://unpkg.com/@zxing/library@latest"></script>
+
 </head>
 <body>
-<header><h2>Inventario PRO 📱</h2></header>
+
+<header><h2>Inventario PRO 📱🔥</h2></header>
 
 <div class="container">
-<h3>Escanear código de barras</h3>
+
+<h3>📷 Escanear (vende automático)</h3>
 <video id="preview" autoplay muted playsinline></video>
 <button onclick="iniciarCamara()">Activar Cámara</button>
 
-<input id="codigo" placeholder="Código de barras">
-<input id="nombre" placeholder="Producto">
-<input id="compra" type="number" placeholder="Compra">
-<input id="venta" type="number" placeholder="Venta">
+<h3>➕ Agregar producto</h3>
+<input id="codigo" placeholder="Código / QR">
+<input id="nombre" placeholder="Nombre">
+<input id="compra" type="number" placeholder="Precio compra">
+<input id="pNormal" type="number" placeholder="Precio normal">
+<input id="pMayorista" type="number" placeholder="Precio mayorista">
+<input id="pHelada" type="number" placeholder="Precio helada">
+<input id="pCaliente" type="number" placeholder="Precio caliente">
 <input id="stock" type="number" placeholder="Stock">
 <button onclick="agregar()">Agregar</button>
 
-<h3>Vender</h3>
+<h3>💸 Vender manual</h3>
 <select id="productoVenta"></select>
 <input id="cantidadVenta" type="number" placeholder="Cantidad">
+
+<select id="tipoVenta">
+<option value="normal">Normal</option>
+<option value="mayorista">Mayorista</option>
+<option value="helada">Helada</option>
+<option value="caliente">Caliente</option>
+</select>
+
 <button onclick="vender()">Vender</button>
 
-<h3>Inventario</h3>
+<h3>📦 Inventario</h3>
 <div id="lista"></div>
 
-<p id="ganancia"></p>
+<h3 id="ganancia"></h3>
+
 </div>
 
-<script src="https://unpkg.com/@zxing/library@latest"></script>
 <script>
-let data = JSON.parse(localStorage.getItem('inv')) || {bodega:[], ventas:[]};
 
-function guardar(){
-localStorage.setItem('inv', JSON.stringify(data));
+/* 🔴 CONFIGURA TU FIREBASE */
+const firebaseConfig = {
+  apiKey: "TU_API_KEY",
+  authDomain: "TU_DOMINIO",
+  projectId: "TU_PROJECT_ID"
+};
+
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+
+const productosRef = db.collection("productos");
+const ventasRef = db.collection("ventas");
+
+let productos = [];
+
+// ELEMENTOS
+const codigoInput = document.getElementById("codigo");
+const nombreInput = document.getElementById("nombre");
+const compraInput = document.getElementById("compra");
+const pNormal = document.getElementById("pNormal");
+const pMayorista = document.getElementById("pMayorista");
+const pHelada = document.getElementById("pHelada");
+const pCaliente = document.getElementById("pCaliente");
+const stockInput = document.getElementById("stock");
+
+const productoVenta = document.getElementById("productoVenta");
+const cantidadVenta = document.getElementById("cantidadVenta");
+const tipoVenta = document.getElementById("tipoVenta");
+
+const lista = document.getElementById("lista");
+const ganancia = document.getElementById("ganancia");
+
+// AGREGAR PRODUCTO
+async function agregar(){
+let codigo = codigoInput.value.trim();
+
+if(!codigo || !nombreInput.value) return alert("Completa todo");
+
+await productosRef.add({
+codigo,
+nombre: nombreInput.value,
+compra: parseFloat(compraInput.value),
+stock: parseInt(stockInput.value),
+precios:{
+normal: parseFloat(pNormal.value),
+mayorista: parseFloat(pMayorista.value),
+helada: parseFloat(pHelada.value),
+caliente: parseFloat(pCaliente.value)
+}
+});
+
+limpiar();
 }
 
-function agregar(){
-let codigo = document.getElementById('codigo').value.trim();
-let nombre = document.getElementById('nombre').value.trim();
-let compra = parseFloat(document.getElementById('compra').value);
-let venta = parseFloat(document.getElementById('venta').value);
-let stock = parseInt(document.getElementById('stock').value);
+// VENDER
+async function vender(codigoEscaneado=null){
 
-if(!codigo || !nombre || isNaN(compra) || isNaN(venta) || isNaN(stock)){
-return alert('Completa todos los campos correctamente');
+let codigo = codigoEscaneado || productoVenta.value;
+let cant = parseInt(cantidadVenta.value) || 1;
+let tipo = tipoVenta.value;
+
+let p = productos.find(x=>x.codigo===codigo);
+
+if(!p) return alert("Producto no existe");
+if(p.stock < cant) return alert("Sin stock");
+
+let precio = p.precios[tipo];
+let gan = (precio - p.compra) * cant;
+
+// actualizar stock
+await productosRef.doc(p.id).update({
+stock: p.stock - cant
+});
+
+// guardar venta
+await ventasRef.add({
+codigo,
+tipo,
+cant,
+gan,
+fecha:new Date()
+});
 }
 
-if(data.bodega.find(p=>p.codigo===codigo)) return alert('Producto duplicado');
-
-data.bodega.push({codigo,nombre,compra,venta,stock});
-
-guardar(); render(); limpiar();
+// ELIMINAR PRODUCTO
+async function eliminar(id){
+if(confirm("¿Eliminar producto?")){
+await productosRef.doc(id).delete();
+}
 }
 
-function vender(){
-let prod = document.getElementById('productoVenta').value;
-let cant = parseInt(document.getElementById('cantidadVenta').value);
-let p = data.bodega.find(x=>x.codigo===prod);
-
-if(!p) return alert('Producto no encontrado');
-if(isNaN(cant) || cant <= 0) return alert('Cantidad inválida');
-if(p.stock < cant) return alert('Sin stock');
-
-p.stock -= cant;
-let gan = (p.venta - p.compra) * cant;
-
-data.ventas.push({codigo:prod,gan});
-
-guardar(); render();
+// EDITAR STOCK
+async function editarStock(id,nuevo){
+await productosRef.doc(id).update({
+stock:parseInt(nuevo)
+});
 }
 
-function render(){
-let lista = document.getElementById('lista');
-let select = document.getElementById('productoVenta');
-lista.innerHTML=''; 
-select.innerHTML='';
-let totalGan=0;
+// ESCUCHAR PRODUCTOS (TIEMPO REAL)
+productosRef.onSnapshot(snap=>{
+productos = [];
+lista.innerHTML="";
+productoVenta.innerHTML="";
 
-data.bodega.forEach((p)=>{
-lista.innerHTML += `<div class="card">
+snap.forEach(doc=>{
+let p = doc.data();
+p.id = doc.id;
+productos.push(p);
+
+lista.innerHTML += `
+<div class="card">
 <strong>${p.nombre}</strong><br>
 Código: ${p.codigo}<br>
-Stock: <span class="${p.stock<5?'low':''}">${p.stock}</span>
-</div>`;
 
-select.innerHTML += `<option value="${p.codigo}">${p.nombre}</option>`;
+Stock:
+<input type="number" value="${p.stock}"
+onchange="editarStock('${p.id}',this.value)">
+
+<br>
+Normal: $${p.precios.normal}<br>
+Mayorista: $${p.precios.mayorista}<br>
+Helada: $${p.precios.helada}<br>
+Caliente: $${p.precios.caliente}<br>
+
+<button class="delete" onclick="eliminar('${p.id}')">Eliminar</button>
+</div>
+`;
+
+productoVenta.innerHTML += `
+<option value="${p.codigo}">${p.nombre}</option>
+`;
+});
 });
 
-data.ventas.forEach(v=> totalGan += v.gan);
+// ESCUCHAR VENTAS
+ventasRef.onSnapshot(snap=>{
+let total=0;
+snap.forEach(v=> total += v.data().gan);
+ganancia.innerText = "Ganancia: $" + total.toFixed(2);
+});
 
-document.getElementById('ganancia').innerText = 'Ganancia: $'+totalGan.toFixed(2);
-}
-
+// LIMPIAR
 function limpiar(){
-['codigo','nombre','compra','venta','stock'].forEach(id=>document.getElementById(id).value='');
+codigoInput.value="";
+nombreInput.value="";
+compraInput.value="";
+pNormal.value="";
+pMayorista.value="";
+pHelada.value="";
+pCaliente.value="";
+stockInput.value="";
 }
 
-// ESCANER FUNCIONANDO EN CELULAR
+// ESCÁNER → VENDE AUTOMÁTICO
 let codeReader;
+
 async function iniciarCamara(){
 try{
-const videoElement = document.getElementById('preview');
+const video = document.getElementById("preview");
 
-// Pedir cámara trasera (importante para celular)
 const stream = await navigator.mediaDevices.getUserMedia({
-video: { facingMode: { exact: "environment" } }
+video:{ facingMode:{ ideal:"environment"} }
 });
 
-videoElement.srcObject = stream;
+video.srcObject = stream;
 
 codeReader = new ZXing.BrowserBarcodeReader();
-codeReader.decodeFromVideoDevice(null, videoElement, (result, err) => {
+
+codeReader.decodeFromVideoDevice(null, video, (result,err)=>{
 if(result){
-document.getElementById('codigo').value = result.text;
+vender(result.text);
 }
 });
 
 }catch(e){
-alert('Error activando cámara: ' + e.message);
+alert("Error cámara: "+e.message);
 }
 }
 
-render();
 </script>
+
 </body>
 </html>
